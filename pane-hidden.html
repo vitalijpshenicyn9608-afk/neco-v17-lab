@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NECO Booking · Скрытая панель (тест)</title>
+<style>
+  body{font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#182b45;background:#f1f5f9;margin:0;padding:14px}
+  h1{font-size:17px;margin:0 0 2px}
+  .muted{color:#64748b;font-size:12px}
+  .panel{background:#fff;border:1px solid #dfe8f3;border-radius:10px;padding:12px;margin:10px 0}
+  textarea{width:95%;height:64px;border:1px solid #cdd5e0;border-radius:6px;padding:6px;font:12px Consolas,monospace}
+  button{width:100%;padding:11px;margin:6px 0;background:#195fbd;color:#fff;border:0;border-radius:8px;font-weight:600;cursor:pointer}
+  button.write{background:#148359}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  pre{white-space:pre-wrap;word-break:break-word;font:12px Consolas,monospace;margin:6px 0 0;max-height:300px;overflow:auto}
+  .err{color:#b02828;font-weight:600}
+  .ok{color:#0c764a;font-weight:600}
+  .warn{background:#fff6df;padding:8px;border-radius:8px;font-size:12px}
+</style>
+<script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+<script src="core.js"></script>
+<script defer src="broker-pod.js"></script>
+<script defer src="pane-hidden.js"></script>
+</head>
+<body>
+  <h1>NECO · Заявки в таблицу (тест скрытия)</h1>
+  <div class="panel" style="border:1px solid #cae0f5"><button id="hide-panel" style="background:#314e70">Скрыть только панель (Excel остаётся открытым)</button><div class="muted" id="hide-status">Окно Excel закрывать или сворачивать не требуется. После скрытия проверьте значок NECO Courier.</div></div>
+  <div class="muted" id="env">Проверка подключения Excel...</div>
+
+  <div class="panel">
+    <b>1. Вставьте заявку</b>
+    <div class="muted">В программе нажмите «Копировать для Excel Online», затем здесь Ctrl+V.</div>
+    <textarea id="paste" placeholder="Ctrl+V" autocomplete="off" spellcheck="false"></textarea>
+    <pre id="plan">Заявка не вставлена.</pre>
+  </div>
+
+  <div class="panel">
+    <b>2. Запись</b>
+    <button id="write" class="write" disabled>Записать в таблицу</button>
+    <button id="recheck" disabled>Проверить заново</button>
+    <pre id="result"></pre>
+    <p class="warn">Пишутся только пустые строки ниже последней занятой. Столбцы B, I, J, L, M не затрагиваются. Занятые строки, формулы и защищённые листы не изменяются.</p>
+  </div>
+
+  <div class="panel" style="border:2px solid #8dbbd8">
+    <b>Broker POD — отдельный перенос</b>
+    <div class="muted">Автоматический Broker POD работает через Windows-приложение. Ручная диагностика: вставьте JSON. Перенос не добавляет строки и заполняет только пустой L (POD) при G=pending.</div>
+    <textarea id="broker-paste" placeholder="Вставьте Broker POD JSON" style="height:95px"></textarea>
+    <button id="broker-check">Проверить Broker POD</button>
+    <button id="broker-write" class="write" disabled>Записать проверенные POD</button>
+    <pre id="broker-status"></pre>
+  </div>
+  <div id="error" class="err" role="alert"></div>
+</body>
+</html>
