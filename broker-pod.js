@@ -5,7 +5,7 @@ const $ = id => document.getElementById(id);
 const norm = v => String(v == null ? '' : v).trim().replace(/\s+/g,' ').toUpperCase();
 const port = v => {
   const s = norm(v).replace(/\s/g,'');
-  const aliases = {QINGDAO:['QINGDAO','ЦИНДАО'],NANSHA:['NANSHA','НАНЬША'],NINGBO:['NINGBO','НИНБО'],SHANGHAI:['SHANGHAI','ШАНХАЙ'],TIANJIN:['TIANJIN','ТЯНЬЦЗИНЬ'],DALIAN:['DALIAN','ДАЛЯНЬ'],RIZHAO:['RIZHAO','ЖИЧЖАО']};
+  const aliases = {QINGDAO:['QINGDAO','ЦИНДАО'],NANSHA:['NANSHA','НАНЬША'],NINGBO:['NINGBO','НИНБО','НИНГБО'],SHANGHAI:['SHANGHAI','ШАНХАЙ'],TIANJIN:['TIANJIN','ТЯНЬЦЗИНЬ'],DALIAN:['DALIAN','ДАЛЯНЬ'],RIZHAO:['RIZHAO','ЖИЧЖАО']};
   return Object.keys(aliases).find(k => aliases[k].includes(s)) || s;
 };
 const containerType = v => norm(v).replace(/[\s'’′`“”"]/g,'');
@@ -188,6 +188,10 @@ async function automatic(data) {
       }
       if(opErr) throw opErr;
     });
+    if (!written.length) {
+      const reasons = rows.length ? rows.slice(0,20).map(r => r.booking+' '+r.status+' '+(r.why||'')).join('; ') : 'Совпадений по booking + POL + type среди последних 500 строк не найдено';
+      throw Error('Broker POD: записано 0. Кандидатов: '+rows.length+', готовых: '+approved.length+'. '+reasons+'; Excel: '+data.sheet+'. Проверьте POL, тип, количество, pending и пустой L.');
+    }
     return {written:written.length, rows:rows.map(r=>({booking:r.booking,type:r.type,row:r.row,status:written.some(w=>w.row===r.row)?'written':r.status.toLowerCase(),why:r.why||''})), diagnostic: rows.length ? ('Найдено кандидатов: '+rows.length+'; готовых: '+approved.length+'; записано: '+written.length+'; примеры: '+rows.slice(0,12).map(r=>r.booking+' '+r.status+' '+(r.why||'')).join('; ')) : 'Не найдено совпадений по букингу + POL + типу среди последних 500 строк Excel. Проверьте лист, тип и POL.'};
   } finally {running=false;}
 }
