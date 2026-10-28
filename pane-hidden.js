@@ -58,6 +58,11 @@ function checkEnv() {
   necoRequireSameBook(url, expected);
 }
 
+// Shared, read-only verifier for the Broker POD module.
+window.docUrl = docUrl;
+window.necoBookIdentity = necoBookIdentity;
+window.necoRequireSameBook = necoRequireSameBook;
+
 async function readSheet(ctx, name) {
   const ws = ctx.workbook.worksheets.getItemOrNullObject(name);
   ws.load('isNullObject,name');

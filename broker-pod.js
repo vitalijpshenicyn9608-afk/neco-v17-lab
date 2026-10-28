@@ -52,30 +52,22 @@ function calc(data, values, first) {
   }
   return result;
 }
-function necoBookIdentity(raw) {
-  try {
-    const u = new URL(String(raw || '').trim());
-    const q = u.searchParams;
-    // Only strong document identifiers; URL paths alone are not reliable in Excel Online.
-    const source = q.get('sourcedoc') || q.get('sourceDoc');
-    if (source) return 'guid:' + source.replace(/[{}]/g, '').trim().toLowerCase();
-    const resid = q.get('resid') || q.get('id');
-    if (resid && /^[a-z0-9!._-]+$/i.test(resid.trim())) return 'resid:' + resid.trim().toLowerCase();
-    const share = u.pathname.match(/\/([a-f0-9]{8}-[a-f0-9-]{20,})\/?$/i);
-    if (share) return 'guid:' + share[1].toLowerCase();
-    return '';
-  } catch (_) { return ''; }
-}
-function necoRequireSameBook(actualUrl, expectedUrl) {
-  const actual = necoBookIdentity(actualUrl), expected = necoBookIdentity(expectedUrl);
-  if (!actual || !expected) throw Error('Не удалось подтвердить ID книги Excel (sourcedoc/resid). Запись запрещена. Открыто: ' + actualUrl + '; ожидается: ' + expectedUrl);
-  if (actual !== expected) throw Error('Открыта другая книга Excel. Запись запрещена. ID открытой: ' + actual + '; ID ожидаемой: ' + expected);
-}
+// Use the same verifier as Outlook -> Excel. Fail closed if it is unavailable.
 function validateBook(data) {
-  const url = String(Office.context.document.url || '');
   const expected = String(data.expectedWorkbookUrl || '').trim();
-  if (!url || !expected) throw Error('Не задан адрес открытой или ожидаемой книги. Запись запрещена.');
-  necoRequireSameBook(url, expected);
+  if (typeof window.docUrl !== 'function' || typeof window.necoRequireSameBook !== 'function') {
+    throw Error('Общая проверка книги не загружена. Запись запрещена.');
+  }
+  const actual = window.docUrl();
+  if (!actual || !expected) throw Error('Не задан адрес книги. Запись запрещена.');
+  try {
+    window.necoRequireSameBook(actual, expected);
+  } catch (e) {
+    // Diagnostic only; do not fall back to filename or account matching.
+    const actualId = typeof window.necoBookIdentity === 'function' ? window.necoBookIdentity(actual) : '';
+    const expectedId = typeof window.necoBookIdentity === 'function' ? window.necoBookIdentity(expected) : '';
+    throw Error('Broker POD: общая проверка книги отклонила запись. ID открытой: '+(actualId||'не найден')+'; ID ожидаемой: '+(expectedId||'не найден')+'. '+e.message);
+  }
 }
 
 async function snapshot(data) {
