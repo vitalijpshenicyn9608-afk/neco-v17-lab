@@ -52,14 +52,32 @@ function calc(data, values, first) {
   }
   return result;
 }
-function validateBook(data) {
-  const url=String(Office.context.document.url||'');
-  if (!url) throw Error('Excel не предоставил URL книги.');
-  const expected=String(data.expectedWorkbookUrl||'');
-  if (!expected.startsWith('https://')) throw Error('Не задан точный URL книги для проверки.');
-  const canon=x=>{const u=new URL(x);return u.origin.toLowerCase()+decodeURIComponent(u.pathname).replace(/\/$/,'').toUpperCase();};
-  if (canon(url)!==canon(expected)) throw Error('Открыта другая книга Excel. Запись запрещена.');
+function necoBookIdentity(raw) {
+  try {
+    const u = new URL(String(raw || '').trim());
+    const q = u.searchParams;
+    // Only strong document identifiers; URL paths alone are not reliable in Excel Online.
+    const source = q.get('sourcedoc') || q.get('sourceDoc');
+    if (source) return 'guid:' + source.replace(/[{}]/g, '').trim().toLowerCase();
+    const resid = q.get('resid') || q.get('id');
+    if (resid && /^[a-z0-9!._-]+$/i.test(resid.trim())) return 'resid:' + resid.trim().toLowerCase();
+    const share = u.pathname.match(/\/([a-f0-9]{8}-[a-f0-9-]{20,})\/?$/i);
+    if (share) return 'guid:' + share[1].toLowerCase();
+    return '';
+  } catch (_) { return ''; }
 }
+function necoRequireSameBook(actualUrl, expectedUrl) {
+  const actual = necoBookIdentity(actualUrl), expected = necoBookIdentity(expectedUrl);
+  if (!actual || !expected) throw Error('Не удалось подтвердить ID книги Excel (sourcedoc/resid). Запись запрещена. Открыто: ' + actualUrl + '; ожидается: ' + expectedUrl);
+  if (actual !== expected) throw Error('Открыта другая книга Excel. Запись запрещена. ID открытой: ' + actual + '; ID ожидаемой: ' + expected);
+}
+function validateBook(data) {
+  const url = String(Office.context.document.url || '');
+  const expected = String(data.expectedWorkbookUrl || '').trim();
+  if (!url || !expected) throw Error('Не задан адрес открытой или ожидаемой книги. Запись запрещена.');
+  necoRequireSameBook(url, expected);
+}
+
 async function snapshot(data) {
   validateBook(data);
   return Excel.run(async ctx=>{

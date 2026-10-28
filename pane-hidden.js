@@ -32,31 +32,30 @@ function labelPlan(pl) {
 }
 function docUrl() { try { return decodeURIComponent(String(Office.context.document.url || '')); } catch (e) { return String(Office.context.document.url || ''); } }
 
+function necoBookIdentity(raw) {
+  try {
+    const u = new URL(String(raw || '').trim());
+    const q = u.searchParams;
+    // Only strong document identifiers; URL paths alone are not reliable in Excel Online.
+    const source = q.get('sourcedoc') || q.get('sourceDoc');
+    if (source) return 'guid:' + source.replace(/[{}]/g, '').trim().toLowerCase();
+    const resid = q.get('resid') || q.get('id');
+    if (resid && /^[a-z0-9!._-]+$/i.test(resid.trim())) return 'resid:' + resid.trim().toLowerCase();
+    const share = u.pathname.match(/\/([a-f0-9]{8}-[a-f0-9-]{20,})\/?$/i);
+    if (share) return 'guid:' + share[1].toLowerCase();
+    return '';
+  } catch (_) { return ''; }
+}
+function necoRequireSameBook(actualUrl, expectedUrl) {
+  const actual = necoBookIdentity(actualUrl), expected = necoBookIdentity(expectedUrl);
+  if (!actual || !expected) throw Error('Не удалось подтвердить ID книги Excel (sourcedoc/resid). Запись запрещена. Открыто: ' + actualUrl + '; ожидается: ' + expectedUrl);
+  if (actual !== expected) throw Error('Открыта другая книга Excel. Запись запрещена. ID открытой: ' + actual + '; ID ожидаемой: ' + expected);
+}
 function checkEnv() {
   const url = docUrl();
-  if (!url) throw Error('Excel не сообщил адрес книги: запись заблокирована.');
-  // Older manual payloads remain test-only; production requires an explicit binding.
-  const mode = payload && payload.workbookMode === 'main' ? 'main' : 'test';
-  if (mode === 'test') {
-    if (!url.toUpperCase().includes(EXPECTED_FILE_PART.toUpperCase())) {
-      throw Error('Тестовый режим разрешён только в книге ПРОБА. Открыто: ' + url);
-    }
-    return;
-  }
   const expected = payload && String(payload.expectedWorkbookUrl || '').trim();
-  if (!expected || !expected.startsWith('https://')) {
-    throw Error('Основная книга не привязана в настройках NECO Booking Manager. Запись запрещена.');
-  }
-  const canonical = raw => {
-    const u = new URL(raw);
-    return u.origin.toLowerCase() + decodeURIComponent(u.pathname).replace(/\/$/, '').toUpperCase();
-  };
-  if (url.toUpperCase().includes(EXPECTED_FILE_PART.toUpperCase())) {
-    throw Error('Основной режим не может записывать в тестовую книгу ПРОБА.');
-  }
-  if (canonical(url) !== canonical(expected)) {
-    throw Error('Открыта ДРУГАЯ книга Excel. Ожидается ' + expected + '; открыто ' + url + '. Запись запрещена.');
-  }
+  if (!url || !expected) throw Error('Для записи требуется привязка к конкретной книге Excel. Запись запрещена.');
+  necoRequireSameBook(url, expected);
 }
 
 async function readSheet(ctx, name) {
