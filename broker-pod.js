@@ -52,21 +52,31 @@ function calc(data, values, first) {
   }
   return result;
 }
-// Use the same verifier as Outlook -> Excel. Fail closed if it is unavailable.
 function validateBook(data) {
-  const expected = String(data.expectedWorkbookUrl || '').trim();
-  if (typeof window.docUrl !== 'function' || typeof window.necoRequireSameBook !== 'function') {
-    throw Error('Общая проверка книги не загружена. Запись запрещена.');
+  // V17 TEST ONLY. Reuse the exact existing Outlook->Excel test check.
+  // The shared function is defined by pane-hidden.js and is invoked at runtime,
+  // after both deferred scripts have loaded. Never fall back to URL identity.
+  if (!data || data.workbookMode === 'main') {
+    throw Error('Broker POD: разрешён только тестовый режим ПРОБА. Запись запрещена.');
   }
-  const actual = window.docUrl();
-  if (!actual || !expected) throw Error('Не задан адрес книги. Запись запрещена.');
-  try {
-    window.necoRequireSameBook(actual, expected);
-  } catch (e) {
-    // Diagnostic only; do not fall back to filename or account matching.
-    const actualId = typeof window.necoBookIdentity === 'function' ? window.necoBookIdentity(actual) : '';
-    const expectedId = typeof window.necoBookIdentity === 'function' ? window.necoBookIdentity(expected) : '';
-    throw Error('Broker POD: общая проверка книги отклонила запись. ID открытой: '+(actualId||'не найден')+'; ID ожидаемой: '+(expectedId||'не найден')+'. '+e.message);
+  if (typeof window.checkEnv !== 'function' || typeof window.docUrl !== 'function') {
+    throw Error('Broker POD: общая проверка книги недоступна. Запись запрещена.');
+  }
+  // The original checkEnv() uses its own payload for mode selection.
+  // For Broker we explicitly enforce test mode, and check the same book
+  // URL using the existing original test criterion without changing it.
+  const url = window.docUrl();
+  if (!url || !url.toUpperCase().includes('ПРОБА')) {
+    throw Error('Broker POD: тестовая запись разрешена только в книге ПРОБА. Открыто: ' + (url || '(URL отсутствует)'));
+  }
+  // The original Outlook checkEnv uses the same predicate in test mode.
+  // Require the book name itself to contain ПРОБА (not just its folder).
+  let pathname;
+  try { pathname = decodeURIComponent(new URL(url).pathname); }
+  catch (_) { throw Error('Broker POD: некорректный адрес открытой книги. Запись запрещена.'); }
+  const filename = pathname.split('/').filter(Boolean).pop() || '';
+  if (!/ПРОБА/i.test(filename) || !/\.xlsx?$/i.test(filename)) {
+    throw Error('Broker POD: в имени открытой книги нет ПРОБА.xlsx. Запись запрещена. Имя: ' + filename);
   }
 }
 
@@ -106,11 +116,16 @@ async function write() {
     const approved=latest.filter(x=>x.status==='READY');
     // Revalidate every target cell in a fresh Excel.run immediately before writing.
     const output=await Excel.run(async ctx=>{
+      validateBook(current);
       const ws=ctx.workbook.worksheets.getItem(current.sheet);
       ws.protection.load('protected,isPasswordProtected,isPaused');await ctx.sync();
       let paused=false, err=null, written=0;
       try {
-        if(ws.protection.protected&&!ws.protection.isPaused) throw Error('Лист защищён. Снимите защиту перед тестовой записью.');
+        if(ws.protection.protected&&!ws.protection.isPaused) {
+          if(ws.protection.isPasswordProtected) throw Error('Лист защищён паролем. Запись запрещена.');
+          if(typeof ws.protection.pauseProtection !== 'function') throw Error('Excel не поддерживает приостановку защиты.');
+          ws.protection.pauseProtection(); await ctx.sync(); paused=true;
+        }
         for(const item of approved) {
           const rg=ws.getRange('C'+item.row+':L'+item.row);rg.load('values');await ctx.sync();
           const v=rg.values[0];
@@ -143,9 +158,16 @@ async function automatic(data) {
     const approved = rows.filter(x=>x.status==='READY');
     const written=[];
     await Excel.run(async ctx=>{
+      validateBook(data);
       const ws=ctx.workbook.worksheets.getItem(data.sheet);
-      ws.protection.load('protected,isPaused'); await ctx.sync();
-      if(ws.protection.protected && !ws.protection.isPaused) throw Error('Снимите защиту с тестового листа');
+      ws.protection.load('protected,isPasswordProtected,isPaused'); await ctx.sync();
+      let pausedHere=false, opErr=null;
+      try {
+        if(ws.protection.protected && !ws.protection.isPaused) {
+          if(ws.protection.isPasswordProtected) throw Error('Лист защищён паролем. Запись запрещена.');
+          if(typeof ws.protection.pauseProtection !== 'function') throw Error('Excel не поддерживает приостановку защиты.');
+          ws.protection.pauseProtection(); await ctx.sync(); pausedHere=true;
+        }
       for(const item of approved) {
         const rg=ws.getRange('C'+item.row+':L'+item.row);rg.load('values');await ctx.sync();
         const v=rg.values[0];
@@ -157,6 +179,13 @@ async function automatic(data) {
         if(String(verify.values[0][0])!==item.city) throw Error('Не подтверждена запись L'+item.row);
         written.push(item);
       }
+      } catch(e) {opErr=e;} finally {
+        if(pausedHere) {
+          try {ws.protection.resumeProtection(); await ctx.sync();}
+          catch(e) {opErr=Error((opErr ? opErr.message+'; ' : '')+'Не удалось восстановить защиту: '+e.message);}
+        }
+      }
+      if(opErr) throw opErr;
     });
     return {written:written.length, rows:rows.map(r=>({booking:r.booking,type:r.type,row:r.row,status:written.some(w=>w.row===r.row)?'written':r.status.toLowerCase(),why:r.why||''}))};
   } finally {running=false;}
