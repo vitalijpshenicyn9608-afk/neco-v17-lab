@@ -8,7 +8,8 @@ const port = v => {
   const aliases = {QINGDAO:['QINGDAO','ЦИНДАО'],NANSHA:['NANSHA','НАНЬША'],NINGBO:['NINGBO','НИНБО'],SHANGHAI:['SHANGHAI','ШАНХАЙ'],TIANJIN:['TIANJIN','ТЯНЬЦЗИНЬ'],DALIAN:['DALIAN','ДАЛЯНЬ'],RIZHAO:['RIZHAO','ЖИЧЖАО']};
   return Object.keys(aliases).find(k => aliases[k].includes(s)) || s;
 };
-const key = (b,p,t) => [norm(b),port(p),norm(t).replace(/\s/g,'')].join('|');
+const containerType = v => norm(v).replace(/[\s'’′`“”"]/g,'');
+const key = (b,p,t) => [norm(b),port(p),containerType(t)].join('|');
 let current = null, preview = null, running = false;
 function display(s, bad=false) { $('broker-status').textContent = s; $('broker-status').className = bad?'err':''; }
 function parse() {
@@ -31,14 +32,14 @@ function calc(data, values, first) {
   const counts = new Map();
   for (const v of values) {
     if (!norm(v[2])) continue;
-    const k = [norm(v[2]),norm(v[4]).replace(/\s/g,'')].join('|');
+    const k = [norm(v[2]),containerType(v[4])].join('|');
     counts.set(k,(counts.get(k)||0)+1);
   }
   const result=[];
   for (let i=values.length-1;i>=0;i--) {
     const v=values[i], booking=norm(v[2]);
     if (!booking || norm(v[6])!=='PENDING' || norm(v[11])) continue;
-    const type=norm(v[4]).replace(/\s/g,'');
+    const type=containerType(v[4]);
     const records=groups.get(key(booking,v[10],type));
     if (!records) continue;
     const item={row:first+i, booking, type, city:'', status:'SKIP', why:''};
@@ -130,7 +131,7 @@ async function write() {
           const rg=ws.getRange('C'+item.row+':L'+item.row);rg.load('values');await ctx.sync();
           const v=rg.values[0];
           // C=0,D=1,E=2,G=4,K=8,L=9
-          if(norm(v[0])!==item.booking || norm(v[2]).replace(/\s/g,'')!==item.type || norm(v[4])!=='PENDING' || norm(v[9]) || port(v[8])!==port(current.rows.find(r=>key(r.booking,r.pol,r.type)===key(item.booking,v[8],item.type)).pol)) continue;
+          if(norm(v[0])!==item.booking || containerType(v[2])!==item.type || norm(v[4])!=='PENDING' || norm(v[9])) continue;
           const group=current.rows.filter(r=>key(r.booking,r.pol,r.type)===key(item.booking,v[8],item.type));
           if(group.reduce((n,r)=>n+Number(r.qty),0)!==Number(v[1])) continue;
           ws.getRange('L'+item.row).values=[[item.city]];
@@ -171,7 +172,7 @@ async function automatic(data) {
       for(const item of approved) {
         const rg=ws.getRange('C'+item.row+':L'+item.row);rg.load('values');await ctx.sync();
         const v=rg.values[0];
-        if(norm(v[0])!==item.booking || norm(v[2]).replace(/\s/g,'')!==item.type || norm(v[4])!=='PENDING' || norm(v[9])) continue;
+        if(norm(v[0])!==item.booking || containerType(v[2])!==item.type || norm(v[4])!=='PENDING' || norm(v[9])) continue;
         const group=data.rows.filter(r=>key(r.booking,r.pol,r.type)===key(item.booking,v[8],item.type));
         if(group.length===0 || group.some(r=>norm(r.soc)!=='COC') || group.reduce((n,r)=>n+Number(r.qty),0)!==Number(v[1])) continue;
         ws.getRange('L'+item.row).values=[[item.city]];await ctx.sync();
@@ -187,7 +188,7 @@ async function automatic(data) {
       }
       if(opErr) throw opErr;
     });
-    return {written:written.length, rows:rows.map(r=>({booking:r.booking,type:r.type,row:r.row,status:written.some(w=>w.row===r.row)?'written':r.status.toLowerCase(),why:r.why||''}))};
+    return {written:written.length, rows:rows.map(r=>({booking:r.booking,type:r.type,row:r.row,status:written.some(w=>w.row===r.row)?'written':r.status.toLowerCase(),why:r.why||''})), diagnostic: rows.length ? ('Найдено кандидатов: '+rows.length+'; готовых: '+approved.length+'; записано: '+written.length+'; примеры: '+rows.slice(0,12).map(r=>r.booking+' '+r.status+' '+(r.why||'')).join('; ')) : 'Не найдено совпадений по букингу + POL + типу среди последних 500 строк Excel. Проверьте лист, тип и POL.'};
   } finally {running=false;}
 }
 window.NECO_BROKER_AUTO = automatic;
