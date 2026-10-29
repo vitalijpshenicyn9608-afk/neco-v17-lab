@@ -54,30 +54,29 @@ function calc(data, values, first) {
   return result;
 }
 function validateBook(data) {
-  // V17 TEST ONLY. Reuse the exact existing Outlook->Excel test check.
-  // The shared function is defined by pane-hidden.js and is invoked at runtime,
-  // after both deferred scripts have loaded. Never fall back to URL identity.
-  if (!data || data.workbookMode === 'main') {
-    throw Error('Broker POD: разрешён только тестовый режим ПРОБА. Запись запрещена.');
+  if (!data || !['main','test'].includes(data.workbookMode)) {
+    throw Error('Broker POD: режим книги не указан. Запись запрещена.');
   }
-  if (typeof window.checkEnv !== 'function' || typeof window.docUrl !== 'function') {
-    throw Error('Broker POD: общая проверка книги недоступна. Запись запрещена.');
-  }
-  // The original checkEnv() uses its own payload for mode selection.
-  // For Broker we explicitly enforce test mode, and check the same book
-  // URL using the existing original test criterion without changing it.
-  const url = window.docUrl();
-  if (!url || !url.toUpperCase().includes('ПРОБА')) {
-    throw Error('Broker POD: тестовая запись разрешена только в книге ПРОБА. Открыто: ' + (url || '(URL отсутствует)'));
-  }
-  // The original Outlook checkEnv uses the same predicate in test mode.
-  // Require the book name itself to contain ПРОБА (not just its folder).
-  let pathname;
-  try { pathname = decodeURIComponent(new URL(url).pathname); }
-  catch (_) { throw Error('Broker POD: некорректный адрес открытой книги. Запись запрещена.'); }
-  const filename = pathname.split('/').filter(Boolean).pop() || '';
-  if (!/ПРОБА/i.test(filename) || !/\.xlsx?$/i.test(filename)) {
-    throw Error('Broker POD: в имени открытой книги нет ПРОБА.xlsx. Запись запрещена. Имя: ' + filename);
+  const url = String(Office.context.document.url || '').trim();
+  if (!url) throw Error('Broker POD: Excel не сообщил адрес книги. Запись запрещена.');
+  const canonical = raw => {
+    const u = new URL(raw);
+    return u.origin.toLowerCase() + decodeURIComponent(u.pathname)
+      .normalize('NFC').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ')
+      .replace(/\/$/, '').toUpperCase();
+  };
+  if (data.workbookMode === 'main') {
+    const expected = String(data.expectedWorkbookUrl || '').trim();
+    if (!expected.startsWith('https://') || !url.startsWith('https://'))
+      throw Error('Broker POD: отсутствует защищённая привязка основной книги.');
+    if (canonical(url) !== canonical(expected))
+      throw Error('Broker POD: открыта другая книга. Ожидалась: ' + expected + '; открыта: ' + url);
+    if (/ПРОБА/i.test(new URL(url).pathname))
+      throw Error('Broker POD: тестовая книга не разрешена в основном режиме.');
+  } else {
+    const filename = decodeURIComponent(new URL(url).pathname).split('/').filter(Boolean).pop() || '';
+    if (!/ПРОБА/i.test(filename) || !/\.xlsx?$/i.test(filename))
+      throw Error('Broker POD: тестовая запись разрешена только в ПРОБА.xlsx. Открыто: ' + url);
   }
 }
 
